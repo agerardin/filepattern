@@ -81,14 +81,14 @@ def main():
 
         # get global coordinates of fov
         metadata = fov[0]
-        fov_start_x = metadata['posX']
-        fov_start_y = metadata['posY']
+        global_fov_start_x = metadata['posX']
+        global_fov_start_y = metadata['posY']
 
         # check which chunks the fov overlaps
-        chunk_col_min = fov_start_x // chunk_width
-        chunk_col_max = (fov_start_x + fov_width) // chunk_width
-        chunk_row_min = fov_start_y // chunk_height
-        chunk_row_max = (fov_start_y + fov_height)  // chunk_height
+        chunk_col_min = global_fov_start_x // chunk_width
+        chunk_col_max = (global_fov_start_x + fov_width) // chunk_width
+        chunk_row_min = global_fov_start_y // chunk_height
+        chunk_row_max = (global_fov_start_y + fov_height)  // chunk_height
 
         max_end_x = 0
         max_end_y = 0
@@ -98,22 +98,22 @@ def main():
             for col in range(chunk_col_min, chunk_col_max + 1):
                 print("row, col : ", row, col)
                 # global coordinates of the contribution
-                global_start_x = max(fov_start_x, col * chunk_width)
-                global_end_x = min(fov_start_x + fov_width, (col + 1) * chunk_width)
-                global_start_y = max( fov_start_y, row * chunk_height)
-                global_end_y = min(fov_start_y + fov_height, (row + 1) * chunk_height)
+                global_start_x = max(global_fov_start_x, col * chunk_width)
+                global_end_x = min(global_fov_start_x + fov_width, (col + 1) * chunk_width)
+                global_start_y = max( global_fov_start_y, row * chunk_height)
+                global_end_y = min(global_fov_start_y + fov_height, (row + 1) * chunk_height)
 
                 print(f"{global_start_x}->{global_end_x},{global_start_y}->{global_end_y}") # remove
 
                 assert(global_start_x >= col * chunk_width)
-                assert(global_start_x >= fov_start_x )
+                assert(global_start_x >= global_fov_start_x )
                 assert(global_start_x <= (col + 1) * chunk_width)
                 assert(global_start_y >= row * chunk_height)
                 assert(global_start_y <= (row + 1) * chunk_height)
 
                 # local coordinates within the fov itself
-                fov_start_x = max(fov_start_x, col * chunk_width) - fov_start_x
-                fov_start_y = max(fov_start_y, row * chunk_height) - fov_start_y
+                fov_start_x = max(global_fov_start_x, col * chunk_width) - global_fov_start_x
+                fov_start_y = max(global_fov_start_y, row * chunk_height) - global_fov_start_y
 
                 region = (
                         filename, 
@@ -164,25 +164,23 @@ def main():
                         region_width = global_end_x - global_start_x
                         region_height = global_end_y - global_start_y
 
-                        # get data from fov
                         print(f"copying region from fov : {fov_start_x, fov_start_y} with width ({region_width}, height {region_height})")
-                        data = br[fov_start_y: fov_start_y + region_height ,fov_start_x: fov_start_x + region_width]
 
-                        # copy data to chunk
+                        data = br[fov_start_y: fov_start_y + region_height ,fov_start_x:fov_start_x + region_width]
+
                         chunk_start_x = global_start_x - col * chunk_width
                         chunk_start_y = global_start_y - row * chunk_height
                         chunk_end_x = chunk_start_x + region_width
                         chunk_end_y = chunk_start_y + region_height
+
                         print(f"to chunk {chunk_start_x}->{chunk_end_x} , {chunk_start_y}->{chunk_end_y}")
                         chunk[chunk_start_y:chunk_end_y, chunk_start_x:chunk_end_x] = data
         
-        # write the chunk to disk
-        # crop the chunk to fit within the image
         max_x = min((row + 1) * chunk_height, full_image_height)
         max_y = min((col + 1) * chunk_width, full_image_width)
 
-        print(f"image size : {bw.shape}")
-        print(f"chunk size : {chunk.shape}")
+        print(bw.shape)
+        print(chunk.shape)
         chunk = chunk[..., np.newaxis, np.newaxis, np.newaxis]
         print(chunk.shape)
 
