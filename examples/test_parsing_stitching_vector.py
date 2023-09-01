@@ -13,7 +13,7 @@ def main():
     IMG_PATH = Path("/Users/antoinegerardin/Documents/data/image-assembler-plugin/nist-mist-dataset/images")
     pattern = fp.infer_pattern(STITCH_PATH)
 
-    OUTPUT_PATH = Path("examples/data") / "out.ome.tiff"
+    OUTPUT_PATH = Path("examples/data")
 
     fovs = fp.FilePattern(STITCH_PATH, pattern)
 
@@ -138,7 +138,7 @@ def main():
 
     # TODO CHECK For now we have a single writer.
     # Check implementation of bfio to see if this makes sense.
-    with BioWriter(OUTPUT_PATH, 
+    with BioWriter(OUTPUT_PATH / output_name, 
                    metadata=full_image_metadata, 
                    backend="python") as bw:
         bw.x =  full_image_width
@@ -152,7 +152,8 @@ def main():
         for row in range(chunk_grid_row):
             for col in range(chunk_grid_col):
 
-                chunk = np.zeros((chunk_width, chunk_height)) # TODO remove,we use bfio supertile
+
+                chunk = np.zeros((chunk_width, chunk_height), bw.dtype) # TODO remove,we use bfio supertile
 
                 for region in chunks[row][col]:
                     print(f"process region : {region} for chunk ({col},{row})")
@@ -176,21 +177,25 @@ def main():
                         print(f"to chunk {chunk_start_x}->{chunk_end_x} , {chunk_start_y}->{chunk_end_y}")
                         chunk[chunk_start_y:chunk_end_y, chunk_start_x:chunk_end_x] = data
         
-        max_x = min((row + 1) * chunk_height, full_image_height)
-        max_y = min((col + 1) * chunk_width, full_image_width)
+                max_y = min((row + 1) * chunk_height, full_image_height)
+                max_x = min((col + 1) * chunk_width, full_image_width)
 
-        print(bw.shape)
-        print(chunk.shape)
-        chunk = chunk[..., np.newaxis, np.newaxis, np.newaxis]
-        print(chunk.shape)
+                print(f"copying chunk to final image : {row * chunk_height}->{max_y} , {col * chunk_width}->{max_x}")
 
-        print(max_x - row * chunk_height)
-        print(max_y - col * chunk_width)
+                print(bw.shape)
+                print(chunk.shape)
+                chunk = chunk[..., np.newaxis, np.newaxis, np.newaxis]
+                print(chunk.shape)
 
-        bw[row * chunk_height:max_x, (col * chunk_width):max_y] = chunk
+                print(max_y - row * chunk_height)
+                print(max_x - col * chunk_width)
+
+                bw[row * chunk_height:max_y, col * chunk_width: max_x] = chunk[0 : max_y - row * chunk_height, 0: max_x - col * chunk_width]
+                # bw[row * chunk_height: (row +1) * chunk_height, col * chunk_width: (col +1) * chunk_width] = chunk
 
 if __name__ == "__main__":
     main()
+
 
 # for file in files(): 
 #     pprint.pprint(file)
