@@ -41,14 +41,14 @@ def main():
     # stitching is only perform on a x,y plane, 
     # so we can safely assume dim(first_image == 2)
     fov_width, fov_height = size = BioReader.image_size(first_image)
-    print(size)
-    print(fov_width)
+    print(f"fov size : {size}")
 
     with BioReader(first_image) as br:
      full_image_metadata = br.metadata
      size = br.image_size
      fov_width = br.x
      fov_height = br.y
+
      # TODO CHECK if there is a need to assemble 3D fovs.
      # It is unlikely given that some stitching 
      # and alignment would needed to occur beforehand.
@@ -81,14 +81,14 @@ def main():
 
         # get global coordinates of fov
         metadata = fov[0]
-        global_fov_start_x = metadata['posX']
-        global_fov_start_y = metadata['posY']
+        fov_start_x = metadata['posX']
+        fov_start_y = metadata['posY']
 
         # check which chunks the fov overlaps
-        chunk_col_min = global_fov_start_x // chunk_width
-        chunk_col_max = (global_fov_start_x + fov_width) // chunk_width
-        chunk_row_min = global_fov_start_y // chunk_height
-        chunk_row_max = (global_fov_start_y + fov_height)  // chunk_height
+        chunk_col_min = fov_start_x // chunk_width
+        chunk_col_max = (fov_start_x + fov_width) // chunk_width
+        chunk_row_min = fov_start_y // chunk_height
+        chunk_row_max = (fov_start_y + fov_height)  // chunk_height
 
         max_end_x = 0
         max_end_y = 0
@@ -98,22 +98,22 @@ def main():
             for col in range(chunk_col_min, chunk_col_max + 1):
                 print("row, col : ", row, col)
                 # global coordinates of the contribution
-                global_start_x = max(global_fov_start_x, col * chunk_width)
-                global_end_x = min(global_fov_start_x + fov_width, (col + 1) * chunk_width)
-                global_start_y = max( global_fov_start_y, row * chunk_height)
-                global_end_y = min(global_fov_start_y + fov_height, (row + 1) * chunk_height)
+                global_start_x = max(fov_start_x, col * chunk_width)
+                global_end_x = min(fov_start_x + fov_width, (col + 1) * chunk_width)
+                global_start_y = max( fov_start_y, row * chunk_height)
+                global_end_y = min(fov_start_y + fov_height, (row + 1) * chunk_height)
 
                 print(f"{global_start_x}->{global_end_x},{global_start_y}->{global_end_y}") # remove
 
                 assert(global_start_x >= col * chunk_width)
-                assert(global_start_x >= global_fov_start_x )
+                assert(global_start_x >= fov_start_x )
                 assert(global_start_x <= (col + 1) * chunk_width)
                 assert(global_start_y >= row * chunk_height)
                 assert(global_start_y <= (row + 1) * chunk_height)
 
                 # local coordinates within the fov itself
-                fov_start_x = max(global_fov_start_x, col * chunk_width) - global_fov_start_x
-                fov_start_y = max(global_start_y, row * chunk_height) - global_fov_start_y
+                fov_start_x = max(fov_start_x, col * chunk_width) - fov_start_x
+                fov_start_y = max(fov_start_y, row * chunk_height) - fov_start_y
 
                 region = (
                         filename, 
@@ -136,39 +136,60 @@ def main():
 
     print("# of regions: ", region_count)
 
-    # now copy each fov regions.
-    # This requires multiple reads and copies and a final write.
-    # This is a slow IObound process so it can benefit multithreading
-    # TODO add multithreading.
-    for row in range(chunk_grid_row):
-        for col in range(chunk_grid_col):
+    # TODO CHECK For now we have a single writer.
+    # Check implementation of bfio to see if this makes sense.
+    with BioWriter(OUTPUT_PATH, 
+                   metadata=full_image_metadata, 
+                   backend="python") as bw:
+        bw.x =  full_image_width
+        bw.y = full_image_height
+        bw._CHUNK_SIZE = 2048 # should match our chunk size
 
-            chunk = np.zeros((chunk_width, chunk_height)) # remove,we use bfio supertile
+        # now copy each fov regions.
+        # This requires multiple reads and copies and a final write.
+        # This is a slow IObound process so it can benefit multithreading
+        # TODO add multithreading.
+        for row in range(chunk_grid_row):
+            for col in range(chunk_grid_col):
 
-            for region in chunks[row][col]:
+                chunk = np.zeros((chunk_width, chunk_height)) # TODO remove,we use bfio supertile
 
-                print(f"process region : {region} for chunk ({col},{row})")
-                # TODO check if we can have subdirectories,
-                # we would then need to append them
-                filepath = IMG_PATH / region[0]
-                with BioReader(filepath) as br:
-                    (global_start_x, global_end_x, global_start_y, global_end_y) = region[1]
-                    (global_fov_start_x, global_fov_start_y) = region[2]
+                for region in chunks[row][col]:
+                    print(f"process region : {region} for chunk ({col},{row})")
+                    filepath = IMG_PATH / region[0]
+                    with BioReader(filepath) as br:
+                        (global_start_x, global_end_x, global_start_y, global_end_y) = region[1]
+                        (fov_start_x, fov_start_y) = region[2]
 
-                    region_width = global_end_x - global_start_x
-                    region_height = global_end_y - global_start_y
+                        region_width = global_end_x - global_start_x
+                        region_height = global_end_y - global_start_y
 
-                    print(f"copying region from fov : {global_fov_start_x, global_fov_start_y} with width ({region_width}, height {region_height})")
+                        # get data from fov
+                        print(f"copying region from fov : {fov_start_x, fov_start_y} with width ({region_width}, height {region_height})")
+                        data = br[fov_start_y: fov_start_y + region_height ,fov_start_x: fov_start_x + region_width]
 
-                    br[global_fov_start_y: global_fov_start_y + region_height ,global_fov_start_x:global_fov_start_x + region_width]
+                        # copy data to chunk
+                        chunk_start_x = global_start_x - col * chunk_width
+                        chunk_start_y = global_start_y - row * chunk_height
+                        chunk_end_x = chunk_start_x + region_width
+                        chunk_end_y = chunk_start_y + region_height
+                        print(f"to chunk {chunk_start_x}->{chunk_end_x} , {chunk_start_y}->{chunk_end_y}")
+                        chunk[chunk_start_y:chunk_end_y, chunk_start_x:chunk_end_x] = data
+        
+        # write the chunk to disk
+        # crop the chunk to fit within the image
+        max_x = min((row + 1) * chunk_height, full_image_height)
+        max_y = min((col + 1) * chunk_width, full_image_width)
 
-                    chunk_start_x = global_start_x - col * chunk_width
-                    chunk_start_y = global_start_y - row * chunk_height
-                    chunk_end_x = chunk_start_x + region_width
-                    chunk_end_y = chunk_start_y + region_height
+        print(f"image size : {bw.shape}")
+        print(f"chunk size : {chunk.shape}")
+        chunk = chunk[..., np.newaxis, np.newaxis, np.newaxis]
+        print(chunk.shape)
 
-                    print(f"to chunk {chunk_start_x}->{chunk_end_x} , {chunk_start_y}->{chunk_end_y}")
-            
+        print(max_x - row * chunk_height)
+        print(max_y - col * chunk_width)
+
+        bw[row * chunk_height:max_x, (col * chunk_width):max_y] = chunk
 
 if __name__ == "__main__":
     main()
